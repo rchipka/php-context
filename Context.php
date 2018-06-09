@@ -14,13 +14,21 @@ class Context {
 	public $children = 0;
 	public $depth = 0;
 
-	public function __construct($key = null) {
+	public function __construct($key, $callback = null) {
 		if ($key) {
 			if (!is_array($key)) {
 				$key = [$key];
 			}
 
 			$this->keys = array_merge($this->keys, $key);
+		}
+
+    if (is_callable($callback)) {
+			try {
+
+	    } catch (\Error $e) {
+	    	error_log(json_encode($e));
+			}
 		}
 	}
 
@@ -302,6 +310,10 @@ class Context {
 		}
 
 		return $this->add_action($action, $keys, $callback, 'after_wrap');
+	}
+
+	public function on($action, $callback) {
+		return $this->add_action($action, $this->keys, $callback);
 	}
 
 	public function add_action($action, $keys, $callback, $mode = null, $match_mode = 'any') {
