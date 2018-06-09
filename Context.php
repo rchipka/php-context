@@ -1,12 +1,12 @@
 <?php
-$GLOBALS['vbtk_context_wrap'] = array();
-$GLOBALS['vbtk_context_debug'] = false;
-$GLOBALS['vbtk_context_last_logged_key'] = null;
-$GLOBALS['vbtk_context_last_depth'] = 0;
-$GLOBALS['vbtk_log_index'] = 0;
+$GLOBALS['context_wrap'] = array();
+$GLOBALS['context_debug'] = false;
+$GLOBALS['context_last_logged_key'] = null;
+$GLOBALS['context_last_depth'] = 0;
+$GLOBALS['log_index'] = 0;
 $GLOBALS['print_h1'] = false;
 
-class VBTK_Context {
+class Context {
 	public $keys = array();
 	public $parent = null;
 	public $heading = 0;
@@ -52,7 +52,7 @@ class VBTK_Context {
 	}
 
 	public function hasParent() {
-		return ($this->parent instanceof VBTK_Context);
+		return ($this->parent instanceof Context);
 	}
 
 	public function hasChildren() {
@@ -60,14 +60,14 @@ class VBTK_Context {
 	}
 
 	public function enter($key, $values = null) {
-		$context = $GLOBALS['current_context'] = new VBTK_Context($key);
+		$context = $GLOBALS['current_context'] = new Context($key);
 
 		$context->parent = $this;
 		$context->depth = $this->depth + 1;
 
 		$this->children++;
 
-		if (vbtk_context_debug()) {
+		if (context_debug()) {
 			$this->log_internal('');
 		}
 
@@ -77,7 +77,7 @@ class VBTK_Context {
 			}
 		}
 
-		do_action('vbtk_enter_context', $context);
+		do_action('enter_context', $context);
 
 		return $context;
 	}
@@ -89,7 +89,7 @@ class VBTK_Context {
 
 		$this->log_internal('');
 
-		do_action('vbtk_exit_context', $this);
+		do_action('exit_context', $this);
 
 		$this->parent->children--;
 
@@ -131,8 +131,8 @@ class VBTK_Context {
 			return true;
 		}
 
-		if (vbtk_context_debug() > 2) {
-			vbtk_context()->log_internal('attempting to match ' . json_encode($keys) . ' with ' . ($this->path(2)));
+		if (context_debug() > 2) {
+			context()->log_internal('attempting to match ' . json_encode($keys) . ' with ' . ($this->path(2)));
 		}
 
 		// TODO: Allow `or` selectors by changing min to 1
@@ -181,8 +181,8 @@ class VBTK_Context {
 			$keys = [$keys];
 		}
 
-		if (vbtk_context_debug() > 1) {
-			vbtk_context()->log('add_filter ' . json_encode($filter) . ' ' . json_encode($keys));
+		if (context_debug() > 1) {
+			context()->log('add_filter ' . json_encode($filter) . ' ' . json_encode($keys));
 		}
 
 		$reflection = (new ReflectionFunction($callback));
@@ -190,13 +190,13 @@ class VBTK_Context {
 		add_filter($filter, function () use ($filter, $keys, $callback, $mode, $reflection) {
 				$args = func_get_args();
 
-				// vbtk_context()->enter($filter);
+				// context()->enter($filter);
 
-				if (call_user_func(array(vbtk_context(), 'match'), $keys)) {
+				if (call_user_func(array(context(), 'match'), $keys)) {
 					ob_start();
 
-					if (vbtk_context_debug()) {
-						vbtk_context()->log('do_filter ' . json_encode($filter) . ' ' . json_encode($keys) . ' ' . $reflection->getName() . ' ' . str_replace($_SERVER['DOCUMENT_ROOT'], '', $reflection->getFileName()));
+					if (context_debug()) {
+						context()->log('do_filter ' . json_encode($filter) . ' ' . json_encode($keys) . ' ' . $reflection->getName() . ' ' . str_replace($_SERVER['DOCUMENT_ROOT'], '', $reflection->getFileName()));
 					}
 
 					$ret = call_user_func_array($callback, $args);
@@ -207,7 +207,7 @@ class VBTK_Context {
 
 					ob_end_clean();
 
-					// vbtk_context()->exit();
+					// context()->exit();
 
 					if ($mode === 'before') {
 						return $ret . $args[0];
@@ -217,7 +217,7 @@ class VBTK_Context {
 
 					return $ret;
 				} else {
-					// vbtk_context()->exit();
+					// context()->exit();
 				}
 
 				return $args[0];
@@ -322,8 +322,8 @@ class VBTK_Context {
 		if ($action == 'enter' || $action == 'exit') {
 			$action .= '_context';
 
-			if (!preg_match('/^vbtk_/', $action)) {
-				$action = 'vbtk_' . $action;
+			if (!preg_match('/^/', $action)) {
+				$action = '' . $action;
 			}
 
 			$match_mode = false;
@@ -334,7 +334,7 @@ class VBTK_Context {
 		add_action($action, function () use ($keys, $callback, $mode) {
 				$args = func_get_args();
 
-				if (call_user_func(array(vbtk_context(), 'match'), $keys, $match_mode)) {
+				if (call_user_func(array(context(), 'match'), $keys, $match_mode)) {
 					call_user_func_array($callback, $args);
 				}
 			}, $priority, $reflection->getNumberOfParameters());
@@ -343,7 +343,7 @@ class VBTK_Context {
 	public function wrap($keys, $string, $priority = null) {
 		$wrap_key = rand(0, 9999999) . '';
 
-		$this->add_action('vbtk_enter_context', $keys, function () use ($string, $wrap_key, $keys) {
+		$this->add_action('enter_context', $keys, function () use ($string, $wrap_key, $keys) {
 				if (is_callable($string)) {
 					ob_start();
 
@@ -356,29 +356,29 @@ class VBTK_Context {
 					ob_end_clean();
 				}
 
-				$GLOBALS['vbtk_context_wrap'][$wrap_key] = vbtk_split_wrap($string);
+				$GLOBALS['context_wrap'][$wrap_key] = split_wrap($string);
 
-				echo $GLOBALS['vbtk_context_wrap'][$wrap_key][0];
+				echo $GLOBALS['context_wrap'][$wrap_key][0];
 			}, $priority, false);
 
-		$this->add_action('vbtk_exit_context', $keys, function () use ($string, $wrap_key, $keys) {
-				echo $GLOBALS['vbtk_context_wrap'][$wrap_key][1];
+		$this->add_action('exit_context', $keys, function () use ($string, $wrap_key, $keys) {
+				echo $GLOBALS['context_wrap'][$wrap_key][1];
 			}, $priority, false);
 	}
 
 	public function _print($array, $object = null) {
-		$keys = apply_filters('vbtk_print_context', array_keys($array));
+		$keys = apply_filters('print_context', array_keys($array));
 
 		if (!$object) {
 			$object = $this->object;
 		}
 
 		foreach ($keys as $key) {
-			$value = apply_filters('vbtk_' . $key, $array[$key], $object);
+			$value = apply_filters('' . $key, $array[$key], $object);
 
 			if (!is_string($value) && !is_numeric($value)) {
 				if (is_array($value) && $value['id'] && $value['width'] && $value['height'] && $value['mime_type']) {
-					$value = wp_get_attachment_image($value['id'], apply_filters('vbtk_image_size', 'thumbnail'));
+					$value = wp_get_attachment_image($value['id'], apply_filters('image_size', 'thumbnail'));
 				} else {
 					$value = '<pre style="display:block;background-color:#FFF;color:#FFF;"><code style="display:block;">' . print_r($value, 1) . '</code></pre>';
 				}
@@ -401,11 +401,11 @@ class VBTK_Context {
 		$pad_space = ' ' . ' ';
 
 		$pad = str_replace(str_repeat(' ', 5), str_repeat(' ', 3) . '| ', str_repeat($pad_space, $this->depth));
-		$last_depth = $GLOBALS['vbtk_context_last_logged_depth'];
+		$last_depth = $GLOBALS['context_last_logged_depth'];
 		$last_pad = str_replace(str_repeat(' ', 5), str_repeat(' ', 3) . '| ', str_repeat($pad_space, $last_depth));
 		$space = ' | ';
 
-		if ($key == $GLOBALS['vbtk_context_last_logged_key']) {
+		if ($key == $GLOBALS['context_last_logged_key']) {
 			$key = ' |';
 
 			if (sizeof(trim($string)) < 1) {
@@ -413,12 +413,12 @@ class VBTK_Context {
 			}
 			// error_log($pad . ' |');
 		} else {
-			$GLOBALS['vbtk_context_last_logged_key'] = $key;
+			$GLOBALS['context_last_logged_key'] = $key;
 
 			$key = preg_replace('/^\//', '', $key);
 
-			if ($GLOBALS['vbtk_context_last_logged_depth'] > 0) {
-				if ($this->depth > $GLOBALS['vbtk_context_last_logged_depth']) {
+			if ($GLOBALS['context_last_logged_depth'] > 0) {
+				if ($this->depth > $GLOBALS['context_last_logged_depth']) {
 					$log = $last_pad . ' \\';
 					$key = '\\ ' . $key;
 				} else {
@@ -430,7 +430,7 @@ class VBTK_Context {
 			}
 		}
 
-		$GLOBALS['vbtk_context_last_logged_depth'] = $this->depth;
+		$GLOBALS['context_last_logged_depth'] = $this->depth;
 		$key = str_pad($pad . $key, 50, ' ', STR_PAD_RIGHT);
 
 		$string = wordwrap($string, 80, "\n", true);
@@ -463,25 +463,25 @@ class VBTK_Context {
 	}
 };
 
-$GLOBALS['current_context'] = new VBTK_Context();
+$GLOBALS['current_context'] = new Context();
 
-function vbtk_context_log($string) {
-	vbtk_context()->log($string);
+function context_log($string) {
+	context()->log($string);
 }
 
-function vbtk_context_debug($value = null) {
+function context_debug($value = null) {
 	if ($value === null) {
-		return $GLOBALS['vbtk_context_debug'];
+		return $GLOBALS['context_debug'];
 	}
 
-	return ($GLOBALS['vbtk_context_debug'] = $value);
+	return ($GLOBALS['context_debug'] = $value);
 }
 
-function vbtk_context() {
+function context() {
 	return $GLOBALS['current_context'];
 }
 
-function vbtk_split_wrap($string) {
+function split_wrap($string) {
 	$string = trim($string);
 
 	return explode('%%', $string);
