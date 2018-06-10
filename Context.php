@@ -420,7 +420,7 @@ class Context {
 		if ($key == $GLOBALS['context_last_logged_key']) {
 			$key = ' |';
 
-			if (sizeof(trim($string)) < 1) {
+			if (strlen(trim($string)) < 1) {
 				return;
 			}
 			// error_log($pad . ' |');
