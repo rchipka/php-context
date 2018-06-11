@@ -496,7 +496,7 @@ function context($keys = null, $callback = null) {
 		return $GLOBALS['current_context'];
 	}
 
-	return new VBTK_Context($keys, $callback);
+	return new Context($keys, $callback);
 }
 
 function split_wrap($string) {
