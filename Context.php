@@ -14,7 +14,7 @@ class Context {
 	public $children = 0;
 	public $depth = 0;
 
-	public function __construct($key, $callback = null) {
+	public function __construct($key = [], $callback = null) {
 		if ($key) {
 			if (!is_array($key)) {
 				$key = [$key];
@@ -67,7 +67,7 @@ class Context {
 		return ($this->children > 0);
 	}
 
-	public function enter($key, $values = null) {
+	public function enter($values = null) {
 		$this->parent = $GLOBALS['current_context'];
 
 		$context = $GLOBALS['current_context'] = new Context($key);
