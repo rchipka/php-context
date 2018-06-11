@@ -70,10 +70,9 @@ class Context {
 	public function enter($values = null) {
 		$this->parent = $GLOBALS['current_context'];
 
-		$context = $GLOBALS['current_context'] = new Context($key);
+		$GLOBALS['current_context'] = $this;
 
-		$context->parent = $this;
-		$context->depth = $this->depth + 1;
+		$this->depth = $this->parent->depth + 1;
 
 		$this->children++;
 
@@ -83,13 +82,13 @@ class Context {
 
 		if (is_array($values)) {
 			foreach ($values as $k => $value) {
-				$context->{$k} = $value;
+				$this->{$k} = $value;
 			}
 		}
 
-		do_action('enter_context', $context);
+		do_action('enter_context', $this);
 
-		return $context;
+		return $this;
 	}
 
 	public function _exit() {
@@ -126,7 +125,7 @@ class Context {
 		return $ctx;
 	}
 
-	public function match($args, $mode = 'any') {
+	public function match($args, $mode = null) {
 		if (!is_array($args)) {
 			$args = array_filter([$args]);
 		}
@@ -138,7 +137,7 @@ class Context {
 		}
 
 		if (sizeof($keys) < 1) {
-			return true;
+			return 1;
 		}
 
 		if (context_debug() > 2) {
@@ -146,7 +145,7 @@ class Context {
 		}
 
 		// TODO: Allow `or` selectors by changing min to 1
-		$min = sizeof($keys);
+		$min = 1;
 		$count = 0;
 
 		foreach ($keys as $key) {
@@ -157,23 +156,23 @@ class Context {
 
 		if ($count >= $min) {
 			if (sizeof($args) < 1 || !$this->hasParent()) {
-				return true;
+				return $count;
 			} else {
-				return call_user_func(array($this->parent, 'match'), $args, $mode);
+				return $count + call_user_func(array($this->parent, 'match'), $args, $mode);
 			}
 		}
 
-		if (!$this->hasChildren() && $mode != 'any') {
-			return false; // current context must match rightmost keys
+		if (!$this->hasChildren()) {
+			return 0; // current context must match rightmost keys
 		}
 
 		if (!$this->hasParent()) {
-			return false;
+			return 0;
 		}
 
 		array_push($args, $keys);
 
-		return call_user_func(array($this->parent, 'match'), $args, $mode);
+		return $count + call_user_func(array($this->parent, 'match'), $args, $mode);
 	}
 
 	public function add_filter($filter, $keys, $callback, $mode = null) {
