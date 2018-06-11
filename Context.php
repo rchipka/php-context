@@ -68,6 +68,8 @@ class Context {
 	}
 
 	public function enter($key, $values = null) {
+		$this->parent = $GLOBALS['current_context'];
+
 		$context = $GLOBALS['current_context'] = new Context($key);
 
 		$context->parent = $this;
@@ -420,7 +422,7 @@ class Context {
 		if ($key == $GLOBALS['context_last_logged_key']) {
 			$key = ' |';
 
-			if (sizeof(trim($string)) < 1) {
+			if (strlen(trim($string)) < 1) {
 				return;
 			}
 			// error_log($pad . ' |');
@@ -489,8 +491,12 @@ function context_debug($value = null) {
 	return ($GLOBALS['context_debug'] = $value);
 }
 
-function context() {
-	return $GLOBALS['current_context'];
+function context($keys = null, $callback = null) {
+	if ($keys === null) {
+		return $GLOBALS['current_context'];
+	}
+
+	return new VBTK_Context($keys, $callback);
 }
 
 function split_wrap($string) {
