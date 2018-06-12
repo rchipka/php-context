@@ -424,7 +424,7 @@ class Context {
 		return $this;
 	}
 
-	public function add_action($action, $keys, $callback, $mode = null, $match_mode = 'any') {
+	public function add_action($action, $keys, $callback, $mode = null, $match_mode = null) {
 		$priority = 5;
 
 		if (!is_array($keys)) {
@@ -454,13 +454,14 @@ class Context {
 		add_action($action, function () use ($keys, $callback, $mode) {
 				$args = func_get_args();
 
-				if (call_user_func(array(context(), 'match'), $keys, $match_mode)) {
+				if (context()->match($keys)) {
 					call_user_func_array($callback, $args);
 				}
 			}, $priority, $reflection->getNumberOfParameters());
 	}
 
-	public function wrap($keys, $string, $priority = null) {
+	public function wrap($string, $priority = null) {
+		$keys = $this->keys;
 		$wrap_key = rand(0, 9999999) . '';
 
 		$this->add_action('enter_context', $keys, function () use ($string, $wrap_key, $keys) {
