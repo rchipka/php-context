@@ -5,6 +5,8 @@ $GLOBALS['context_last_logged_key'] = null;
 $GLOBALS['context_last_depth'] = 0;
 $GLOBALS['log_index'] = 0;
 $GLOBALS['print_h1'] = false;
+$GLOBALS['enter_callbacks'] = [];
+$GLOBALS['context_values'] = [];
 
 class Context {
 	public $keys = array();
@@ -13,6 +15,8 @@ class Context {
 	public $object = null;
 	public $children = 0;
 	public $depth = 0;
+	public $_data = [];
+	public $cached_data = null;
 
 	public function __construct($key = [], $callback = null) {
 		if ($key) {
@@ -59,6 +63,81 @@ class Context {
 		return $path;
 	}
 
+	public function set($key, $value = null) {
+		$self = $this;
+
+		if (sizeof(context()->keys) > 0 && context() === $this) {
+			$this->_data[$key] = $value;
+		} else {
+			if (!$GLOBALS['context_values'][$key]) {
+				$GLOBALS['context_values'][$key] = [];
+			}
+
+			$GLOBALS['context_values'][$key][] = [
+				'context' => $this,
+				'value' => $value
+			];
+		}
+
+		return $this;
+	}
+
+	public function get($key = null, $force_local = false) {
+		$value = null;
+
+		context()->log('GET ' . json_encode($key) . ' ' . json_encode($this->keys));
+
+		if (context() === $this || $force_local = true) {
+			if (is_null($key)) {
+				$value = $this->data();
+			} else {
+				$value = $this->_data[$key];
+
+				if (!$value && $this->hasParent()) {
+					$value = $this->parent->get($key, true);
+				}
+			}
+		}
+
+		if ($force_local === true) {
+			return $value;
+		}
+
+		if (!$value && is_array($GLOBALS['context_values'][$key])) {
+			$value = null;
+			$max_amount = 0;
+
+			foreach ($GLOBALS['context_values'][$key] as $item) {
+				$amount = context()->match(array_merge($item['context']->keys, [ context()->keys ]));
+
+				if ($amount > $max_amount) {
+					$max_amount = $amount;
+					$value = $item['value'];
+				}
+			}
+		}
+
+		if (is_callable($value)) {
+			$value = $value();
+		}
+
+		return $value;
+	}
+
+	public function data() {
+		if ($this->cached_data !== null) {
+			return $this->cached_data;
+		}
+
+		if ($this->hasParent()) {
+			$this->cached_data = array_merge($this->_data, $this->parent->data());
+		} else {
+			$this->cached_data = $this->_data;
+		}
+
+		return $this->cached_data;
+	}
+
 	public function hasParent() {
 		return ($this->parent instanceof Context);
 	}
@@ -76,14 +155,30 @@ class Context {
 
 		$this->children++;
 
-		if (context_debug()) {
+		// if (context_debug()) {
 			$this->log_internal('');
-		}
+		// }
 
 		if (is_array($values)) {
 			foreach ($values as $k => $value) {
 				$this->{$k} = $value;
 			}
+		}
+
+		$matches = [];
+
+		foreach ($GLOBALS['enter_callbacks'] as $array) {
+			if (($array['match'] = context()->match($array['context']->keys)) > 0) {
+				$matches[] = &$array;
+			}
+		}
+
+		usort($matches, function ($a, $b) {
+			return $a['match'] - $b['match'];
+		});
+
+		foreach ($matches as $match) {
+			$match['callback']($this);
 		}
 
 		do_action('enter_context', $this);
@@ -125,7 +220,11 @@ class Context {
 		return $ctx;
 	}
 
-	public function match($args, $mode = null) {
+	public function match($args = null, $mode = null) {
+		if ($args === null) {
+			return $this->match(context()->keys);
+		}
+
 		if (!is_array($args)) {
 			$args = array_filter([$args]);
 		}
@@ -137,7 +236,7 @@ class Context {
 		}
 
 		if (sizeof($keys) < 1) {
-			return 1;
+			return 0;
 		}
 
 		if (context_debug() > 2) {
@@ -145,7 +244,6 @@ class Context {
 		}
 
 		// TODO: Allow `or` selectors by changing min to 1
-		$min = 1;
 		$count = 0;
 
 		foreach ($keys as $key) {
@@ -154,7 +252,7 @@ class Context {
 			}
 		}
 
-		if ($count >= $min) {
+		if ($count >= sizeof($keys)) {
 			if (sizeof($args) < 1 || !$this->hasParent()) {
 				return $count;
 			} else {
@@ -172,7 +270,7 @@ class Context {
 
 		array_push($args, $keys);
 
-		return $count + call_user_func(array($this->parent, 'match'), $args, $mode);
+		return call_user_func(array($this->parent, 'match'), $args, $mode);
 	}
 
 	public function add_filter($filter, $keys, $callback, $mode = null) {
@@ -314,7 +412,16 @@ class Context {
 	}
 
 	public function on($action, $callback) {
-		return $this->add_action($action, $this->keys, $callback);
+		if ($action === 'enter') {
+			$GLOBALS['enter_callbacks'][] = [
+				'context' => $this,
+				'callback' => $callback
+			];
+		} else {
+			return $this->add_action($action, $this->keys, $callback);
+		}
+
+		return $this;
 	}
 
 	public function add_action($action, $keys, $callback, $mode = null, $match_mode = 'any') {
@@ -430,7 +537,7 @@ class Context {
 
 			$key = preg_replace('/^\//', '', $key);
 
-			if ($GLOBALS['context_last_logged_depth'] > 0) {
+			if ($GLOBALS['context_last_logged_depth'] > 0 && $GLOBALS['context_last_logged_depth'] != $this->depth) {
 				if ($this->depth > $GLOBALS['context_last_logged_depth']) {
 					$log = $last_pad . ' \\';
 					$key = '\\ ' . $key;
@@ -469,6 +576,8 @@ class Context {
 
 			error_log($key . $space . $line);
 		}
+
+		return $this;
 	}
 
 	public function log_internal($string) {
