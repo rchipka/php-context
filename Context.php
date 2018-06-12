@@ -612,3 +612,4 @@ function split_wrap($string) {
 
 	return explode('%%', $string);
 }
+
