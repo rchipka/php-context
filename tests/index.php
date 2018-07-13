@@ -96,4 +96,25 @@ final class ContextTest extends TestCase {
 
         context()->exit();
     }
+
+    public function testGetSet(): void {
+
+        context('root')->enter();
+
+            context(['mid', 'node'])->enter();
+
+                context()->set('test', 123);
+
+                $this->assertEquals(123, context()->get('test'));
+
+                context(['a', 'child'])->enter();
+                
+                $this->assertEquals(123, context()->get('test'));
+
+                context()->exit();
+
+            context()->exit();
+
+        context()->exit();
+    }
 }
