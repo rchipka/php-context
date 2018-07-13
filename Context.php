@@ -29,7 +29,11 @@ class Context {
 
     if (is_callable($callback)) {
 			try {
+				$this->enter();
 
+				call_user_func($callback);
+
+				$this->exit();
 	    } catch (\Error $e) {
 	    	error_log(json_encode($e));
 			}
@@ -47,103 +51,6 @@ class Context {
 		}
 
 		return call_user_func_array(array($this, $method), $args);
-	}
-
-	public function path($limit = null, $count = 0) {
-		$path = '/' . implode('.', $this->keys);
-
-		if ($limit !== null && ++$count > $limit) {
-			return '';
-		}
-
-		if ($this->hasParent()) {
-			return $this->parent->path($limit, $count) . $path;
-		}
-
-		return $path;
-	}
-
-	public function set($key, $value = null) {
-		$self = $this;
-
-		if (sizeof(context()->keys) > 0 && context() === $this) {
-			$this->_data[$key] = $value;
-		} else {
-			if (!$GLOBALS['context_values'][$key]) {
-				$GLOBALS['context_values'][$key] = [];
-			}
-
-			$GLOBALS['context_values'][$key][] = [
-				'context' => $this,
-				'value' => $value
-			];
-		}
-
-		return $this;
-	}
-
-	public function get($key = null, $force_local = false) {
-		$value = null;
-
-		context()->log('GET ' . json_encode($key) . ' ' . json_encode($this->keys));
-
-		if (context() === $this || $force_local = true) {
-			if (is_null($key)) {
-				$value = $this->data();
-			} else {
-				$value = $this->_data[$key];
-
-				if (!$value && $this->hasParent()) {
-					$value = $this->parent->get($key, true);
-				}
-			}
-		}
-
-		if ($force_local === true) {
-			return $value;
-		}
-
-		if (!$value && is_array($GLOBALS['context_values'][$key])) {
-			$value = null;
-			$max_amount = 0;
-
-			foreach ($GLOBALS['context_values'][$key] as $item) {
-				$amount = context()->match(array_merge($item['context']->keys, [ context()->keys ]));
-
-				if ($amount > $max_amount) {
-					$max_amount = $amount;
-					$value = $item['value'];
-				}
-			}
-		}
-
-		if (is_callable($value)) {
-			$value = $value();
-		}
-
-		return $value;
-	}
-
-	public function data() {
-		if ($this->cached_data !== null) {
-			return $this->cached_data;
-		}
-
-		if ($this->hasParent()) {
-			$this->cached_data = array_merge($this->_data, $this->parent->data());
-		} else {
-			$this->cached_data = $this->_data;
-		}
-
-		return $this->cached_data;
-	}
-
-	public function hasParent() {
-		return ($this->parent instanceof Context);
-	}
-
-	public function hasChildren() {
-		return ($this->children > 0);
 	}
 
 	public function enter($values = null) {
@@ -181,7 +88,9 @@ class Context {
 			$match['callback']($this);
 		}
 
-		do_action('enter_context', $this);
+		if (defined( 'WP_DEFAULT_THEME' ) ) {
+			do_action('enter_context', $this);
+		}
 
 		return $this;
 	}
@@ -193,7 +102,9 @@ class Context {
 
 		$this->log_internal('');
 
-		do_action('exit_context', $this);
+		if (defined( 'WP_DEFAULT_THEME' ) ) {
+			do_action('exit_context', $this);
+		}
 
 		$this->parent->children--;
 
@@ -202,25 +113,29 @@ class Context {
 		return ($this->parent);
 	}
 
-	public function find($args) {
-		$ctx = $this;
+	public function path($limit = null, $count = 0) {
+		$path = '/' . implode('.', $this->keys);
 
-		while ($ctx) {
-			if (call_user_func(array($ctx, 'match'), $keys, false)) {
-				break;
-			}
-
-			if (!$ctx->hasParent()) {
-				break;
-			}
-
-			$ctx = $ctx->parent;
+		if ($limit !== null && ++$count > $limit) {
+			return '';
 		}
 
-		return $ctx;
+		if ($this->hasParent()) {
+			return $this->parent->path($limit, $count) . $path;
+		}
+
+		return $path;
 	}
 
-	public function match($args = null, $mode = null) {
+	public function hasParent() {
+		return ($this->parent instanceof Context);
+	}
+
+	public function hasChildren() {
+		return ($this->children > 0);
+	}
+
+	public function match($args = null, $matchToParent = false, $parentCount = 0) {
 		if ($args === null) {
 			return $this->match(context()->keys);
 		}
@@ -239,11 +154,10 @@ class Context {
 			return 0;
 		}
 
-		if (context_debug() > 2) {
+		if (context_debug() > 2 && $parentCount === 0) {
 			context()->log_internal('attempting to match ' . json_encode($keys) . ' with ' . ($this->path(2)));
 		}
 
-		// TODO: Allow `or` selectors by changing min to 1
 		$count = 0;
 
 		foreach ($keys as $key) {
@@ -253,14 +167,26 @@ class Context {
 		}
 
 		if ($count >= sizeof($keys)) {
+			$count = ($count / sizeof($this->keys));// * $this->depth;
+
 			if (sizeof($args) < 1 || !$this->hasParent()) {
 				return $count;
 			} else {
-				return $count + call_user_func(array($this->parent, 'match'), $args, $mode);
+				$parent = call_user_func(array($this->parent, 'match'), $args, $matchToParent, $parentCount);
+
+				if ($parent > 0) {
+					if ($parentCount == 0) {
+						return ($count + $parent); // / $this->depth;
+					}
+
+					return $count + $parent;
+				}
+
+				return 0;
 			}
 		}
 
-		if (!$this->hasChildren()) {
+		if (!$this->hasChildren() && $matchToParent !== true) {
 			return 0; // current context must match rightmost keys
 		}
 
@@ -270,7 +196,91 @@ class Context {
 
 		array_push($args, $keys);
 
-		return call_user_func(array($this->parent, 'match'), $args, $mode);
+		return call_user_func(array($this->parent, 'match'), $args, $matchToParent, $parentCount);
+	}
+
+	public function within($args) {
+		return $this->match($args, true);
+	}
+
+
+	public function get($key = null, $force_local = false) {
+		$value = null;
+
+		if (context() === $this) {
+			context()->log('GET ' . json_encode($key) . ' ' . json_encode($this->keys));
+		}
+
+		if (context() === $this || $force_local = true) {
+			if (is_null($key)) {
+				$value = $this->data();
+			} else {
+				$value = $this->_data[$key];
+
+				if (!$value && $this->hasParent()) {
+					$value = $this->parent->get($key, true);
+				}
+			}
+		}
+
+		if ($force_local === true) {
+			return $value;
+		}
+
+		if (!$value && is_array($GLOBALS['context_values'][$key])) {
+			$value = null;
+			$max_amount = 0;
+
+			foreach ($GLOBALS['context_values'][$key] as $item) {
+				$amount = context()->within($item['context']->keys);
+
+				context()->log($amount . ' - ' . json_encode($item['context']->keys));
+
+				if ($amount > $max_amount) {
+					$max_amount = $amount;
+					$value = $item['value'];
+				}
+			}
+		}
+
+		if (is_callable($value)) {
+			$value = $value();
+		}
+
+		return $value;
+	}
+
+	public function set($key, $value = null) {
+		$self = $this;
+
+		if (sizeof(context()->keys) > 0 && context() === $this) {
+			$this->_data[$key] = $value;
+		} else {
+			if (!$GLOBALS['context_values'][$key]) {
+				$GLOBALS['context_values'][$key] = [];
+			}
+
+			$GLOBALS['context_values'][$key][] = [
+				'context' => $this,
+				'value' => $value
+			];
+		}
+
+		return $this;
+	}
+
+	public function data() {
+		if ($this->cached_data !== null) {
+			return $this->cached_data;
+		}
+
+		if ($this->hasParent()) {
+			$this->cached_data = array_merge($this->_data, $this->parent->data());
+		} else {
+			$this->cached_data = $this->_data;
+		}
+
+		return $this->cached_data;
 	}
 
 	public function add_filter($filter, $keys, $callback, $mode = null) {

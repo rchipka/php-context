@@ -1,9 +1,11 @@
-
 {
     "name": "rchipka/context",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "license": "MIT",
     "autoload": {
         "files": ["Context.php"]
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^7"
     }
 }
