@@ -234,7 +234,7 @@ class Context {
 			foreach ($GLOBALS['context_values'][$key] as $item) {
 				$amount = context()->within($item['context']->keys);
 
-				context()->log($amount . ' - ' . json_encode($item['context']->keys));
+				// context()->log($amount . ' - ' . json_encode($item['context']->keys));
 
 				if ($amount > $max_amount) {
 					$max_amount = $amount;
